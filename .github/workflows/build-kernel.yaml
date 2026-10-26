@@ -1,0 +1,38 @@
+# Builds only the RK3566 kernel (the KERNEL file of a Moss image) with its initramfs inside: the boot splash and
+# the RGB20SX CPU regulator patch live there. Not the whole image: no emulators, no root file system.
+name: build-kernel
+on:
+  workflow_dispatch:
+
+jobs:
+  kernel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 600
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+      - uses: actions/checkout@v4
+      - name: Build the kernel
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
+          docker run --rm --init --user "$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e DEVICE_ROOT=RK3566 -e PROJECT=Rockchip -e DEVICE=RK3566 -e ARCH=aarch64 \
+            justenoughlinuxos/jelos-build:latest \
+            bash -c 'set -e; ./scripts/build linux 2>&1 | tee /work/out/build.log | tail -n 40 >/dev/null; ls -l build.MOSS-RK3566.aarch64/linux-*/arch/arm64/boot/Image'
+      - name: Collect
+        if: always()
+        run: |
+          set +e
+          cp build.MOSS-RK3566.aarch64/linux-*/arch/arm64/boot/Image out/KERNEL 2>/dev/null
+          (cd out && md5sum KERNEL | sed 's# KERNEL# target/KERNEL#' > KERNEL.md5; ls -l)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: moss-kernel-RK3566
+          path: out
