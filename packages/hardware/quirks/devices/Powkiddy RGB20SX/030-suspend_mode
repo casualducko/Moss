@@ -1,0 +1,37 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2022-present Fewtarius
+
+### Sleep is currently broken, so we'll disable it.
+###
+### logind only reads these files when it starts and this runs after it has,
+### so on the first boot, when they don't exist yet, the power button would
+### still suspend the device until the next reboot. Only restart logind when
+### something actually changed.
+
+SLEEP_CONF=/storage/.config/sleep.conf.d/sleep.conf
+LOGIN_CONF=/storage/.config/logind.conf.d/login.conf
+CHANGED=0
+
+write_if_changed() { # path, contents
+  mkdir -p "$(dirname "$1")"
+  if [ "$(cat "$1" 2>/dev/null)" != "$2" ]
+  then
+    printf '%s\n' "$2" >"$1"
+    CHANGED=1
+  fi
+}
+
+write_if_changed "${SLEEP_CONF}" "[Sleep]
+AllowSuspend=no
+SuspendState=freeze"
+
+### Ignore power button presses for now, until we can finish up fixing sleep.
+write_if_changed "${LOGIN_CONF}" "[Login]
+HandlePowerKey=ignore
+HandleSuspendKey=ignore"
+
+if [ "${CHANGED}" = "1" ]
+then
+  systemctl restart systemd-logind
+fi
